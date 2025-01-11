@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تولید کانفیگ وایرگارد</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://crypto-js.googlecode.com/svn/tags/3.1.9-1/build/rollups/aes.js"></script>
+</head>
+<body class="bg-gray-900">
+    <div class="container mx-auto p-4 max-w-2xl">
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-6 text-center">تولید کانفیگ وایرگارد</h1>
+
+            <form id="configForm" class="space-y-4">
+                <div class="space-y-2">
+                    <label class="block font-medium">پورت سرور:</label>
+                    <input type="number" id="serverPort" class="w-full p-2 border rounded" value="51820" min="1" max="65535" required>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block font-medium">سرورهای DNS:</label>
+                    <select id="dnsType" class="w-full p-2 border rounded">
+                        <option value="google">Google (8.8.8.8)</option>
+                        <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+                        <option value="custom" style="color: rgb(0, 190, 152);">دستی</option>
+                        <option value="shecan">Shecan (178.22.122.100)</option>
+                        <option value="radar">Radar (10.202.10.10, 10.202.10.11)</option>
+                        <option value="service403">Service 403 (10.202.10.202, 10.202.10.102)</option>
+                        <option value="beyond">Beyond (185.55.226.26, 185.55.225.25)</option>
+                        <option value="shakan">Shakan (178.22.122.100, 185.51.200.2)</option>
+                        <option value="shatel">Shatel (85.15.1.14, 85.15.1.15)</option>
+                        <option value="electro">Electro (78.157.42.100, 78.157.42.101)</option>
+                        <option value="hostiran">Hostiran (172.29.2.100, 172.29.2.100)</option>
+                        <option value="level3">Level3 (209.244.0.3, 209.244.0.4)</option>
+                        <option value="opendns">OpenDNS (208.67.222.222, 208.67.220.220)</option>
+                        <option value="telecom_shatel_asiatech_ritel">Telecom/Shatel/Asiatech/Ritel (91.239.100.100, 89.233.43.71)</option>
+                        <option value="pars_online">Pars Online (46.224.1.221, 46.224.1.220)</option>
+                        <option value="hamrah_avval">Hamrah Avval (208.67.220.200, 208.67.222.222)</option>
+                        <option value="irancell_1">Irancell 1 (109.69.8.51, 0.0.0.0)</option>
+                        <option value="irancell_2">Irancell 2 (74.82.42.42, 0.0.0.0)</option>
+                        <option value="telecom">Telecom (8.8.8.8, 8.8.4.4)</option>
+                        <option value="telecom_2">Telecom 2 (4.4.4.4, 4.2.2.4)</option>
+                        <option value="telecom_3">Telecom 3 (195.46.39.39, 195.46.39.40)</option>
+                        <option value="mobinnet">Mobinnet (10.44.8.8, 8.8.8.8)</option>
+                    </select>
+                    <input type="text" id="customDns" class="w-full p-2 border rounded hidden" placeholder="DNS های دلخواه را با کاما جدا کنید">
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block font-medium">تعداد کانفیگ:</label>
+                    <input type="number" id="configCount" class="w-full p-2 border rounded" value="1" min="1" max="100" required>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-500 text-white p-3 rounded hover:bg-blue-600">
+                    تولید و ارسال به تلگرام
+                </button>
+            </form>
+
+            <div id="results" class="mt-6 space-y-6"></div>
+        </div>
+    </div>
+
+    <script>
+        const TELEGRAM_BOT_TOKEN = '7868173689:AAHdzcmNP8yiKzmmcrxsWHmpgu47RxIjpV0';
+        const CHAT_IDS = ['-1002480106764']; // کانال با ID عددی
+
+        const IP_RANGES = [
+            { start: '84.128.0.0', end: '84.191.255.255' },
+            { start: '87.128.0.0', end: '87.191.255.255' },
+            { start: '79.192.0.0', end: '79.255.255.255' },
+            { start: '93.192.0.0', end: '93.255.255.255' },
+            { start: '217.224.0.0', end: '217.255.255.255' },
+            { start: '91.0.0.0', end: '91.63.255.255' }
+        ];
+
+        let currentFileNumber = parseInt(localStorage.getItem('configFileNumber')) || 1;
+
+        function incrementFileNumber() {
+            currentFileNumber++;
+            localStorage.setItem('configFileNumber', currentFileNumber);
+        }
+
+        function generateWgKey() {
+            const keyBytes = CryptoJS.lib.WordArray.random(32);
+            return CryptoJS.enc.Base64.stringify(keyBytes);
+        }
+
+        function ipToInt(ip) {
+            return ip.split('.')
+                .reduce((int, oct) => (int << 8) + parseInt(oct), 0) >>> 0;
+        }
+
+        function intToIp(int) {
+            return [
+                (int >>> 24) & 255,
+                (int >>> 16) & 255,
+                (int >>> 8) & 255,
+                int & 255
+            ].join('.');
+        }
+
+        function generateIpFromRange(range) {
+            const start = ipToInt(range.start);
+            const end = ipToInt(range.end);
+            const random = start + Math.floor(Math.random() * (end - start));
+            return intToIp(random);
+        }
+
+        function generateConfigFile(privateKey, publicKey, clientIp, dnsServers, endpointIp, port) {
+            const config = `[Interface]
+PrivateKey = ${privateKey}
+Address = ${clientIp}/24
+DNS = ${dnsServers}
+
+[Peer]
+PublicKey = ${publicKey}
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = ${endpointIp}:${port}
+PersistentKeepalive = 25`;
+
+            const blob = new Blob([config], { type: 'text/plain' });
+            return new File([blob], `wireconfig${currentFileNumber}.conf`, { type: 'text/plain' });
+        }
+
+        async function sendConfigFileToTelegram(fileId) {
+    const results = await Promise.all(CHAT_IDS.map(async (chatId) => {
+        const formData = new FormData();
+        formData.append('chat_id', chatId);  // chat_id صحیح کانال را وارد کنید
+        formData.append('document', fileId);  // استفاده از file_id موجود
+        formData.append('caption', `🌟 Config File #${currentFileNumber}\n🔰 @hellboy_config`);
+
+        try {
+            const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            console.log(`File send response for ${chatId}:`, data);
+
+            if (!data.ok) {
+                throw new Error(`Telegram API Error: ${data.description}`);
+            }
+
+            return {
+                chatId,
+                success: data.ok,
+                error: data.description
+            };
+        } catch (error) {
+            console.error(`Failed to send to ${chatId}:`, error);
+            return {
+                chatId,
+                success: false,
+                error: error.message
+            };
+        }
+    }));
+
+    return results;
+}
+
+// فراخوانی تابع ارسال فایل با file_id
+const fileId = "BQACAgQAAxkDAAMdZ4LBSA8c3XeoGsTLMzigRMlFeBUAArQaAAIjnRlQk_Db4RpnujQ2BA";  // file_id دریافت شده
+sendConfigFileToTelegram(fileId);
+
+
+
+
+        function handleFormSubmission(event) {
+            event.preventDefault();
+
+            const serverPort = document.getElementById('serverPort').value;
+            const dnsType = document.getElementById('dnsType').value;
+            const customDns = document.getElementById('customDns').value;
+            const configCount = parseInt(document.getElementById('configCount').value);
+
+            const selectedDns = dnsType === 'custom' && customDns
+                ? customDns.split(',')
+                : dnsType === 'radar' ? ['10.202.10.10', '10.202.10.11']
+                : dnsType === 'google' ? ['8.8.8.8', '8.8.4.4']
+                : dnsType === 'cloudflare' ? ['1.1.1.1', '1.0.0.1']
+                : dnsType === 'service403' ? ['10.202.10.202', '10.202.10.102']
+    : dnsType === 'beyond' ? ['185.55.226.26', '185.55.225.25']
+    : dnsType === 'shakan' ? ['178.22.122.100', '185.51.200.2']
+    : dnsType === 'shatel' ? ['85.15.1.14', '85.15.1.15']
+    : dnsType === 'electro' ? ['78.157.42.100', '78.157.42.101']
+    : dnsType === 'hostiran' ? ['172.29.2.100', '172.29.2.100']
+    : dnsType === 'level3' ? ['209.244.0.3', '209.244.0.4']
+    : dnsType === 'opendns' ? ['208.67.222.222', '208.67.220.220']
+    : dnsType === 'telecom_shatel_asiatech_ritel' ? ['91.239.100.100', '89.233.43.71']
+    : dnsType === 'pars_online' ? ['46.224.1.221', '46.224.1.220']
+    : dnsType === 'hamrah_avval' ? ['208.67.220.200', '208.67.222.222']
+    : dnsType === 'irancell_1' ? ['109.69.8.51']
+    : dnsType === 'irancell_2' ? ['74.82.42.42']
+    : dnsType === 'telecom' ? ['8.8.8.8', '8.8.4.4']
+    : dnsType === 'telecom_2' ? ['4.4.4.4', '4.2.2.4']
+    : dnsType === 'telecom_3' ? ['195.46.39.39', '195.46.39.40']
+    : dnsType === 'mobinnet' ? ['10.44.8.8', '8.8.8.8']
+                : [];
+
+            const selectedRange = IP_RANGES[Math.floor(Math.random() * IP_RANGES.length)];
+            const clientIp = generateIpFromRange(selectedRange);
+            const privateKey = generateWgKey();
+            const publicKey = generateWgKey();  // Ideally, public key generation should be based on the private key
+
+            const configFiles = [];
+            for (let i = 0; i < configCount; i++) {
+                const configFile = generateConfigFile(privateKey, publicKey, clientIp, selectedDns.join(','), '185.220.100.1', serverPort);
+                configFiles.push(configFile);
+                incrementFileNumber();
+            }
+
+            const resultContainer = document.getElementById('results');
+            resultContainer.innerHTML = `
+                <div class="bg-green-100 p-4 rounded">
+                    <p class="font-bold text-green-800">کانفیگ‌ها با موفقیت تولید شدند!</p>
+                </div>
+                <pre>${JSON.stringify(configFiles, null, 2)}</pre>
+            `;
+
+            sendConfigFileToTelegram(configFiles[0]);
+        }
+
+        document.getElementById('configForm').addEventListener('submit', handleFormSubmission);
+
+        document.getElementById('dnsType').addEventListener('change', (e) => {
+            const customDnsInput = document.getElementById('customDns');
+            customDnsInput.classList.toggle('hidden', e.target.value !== 'custom');
+        });
+    </script>
+</body>
+</html>
